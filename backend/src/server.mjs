@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import pg from "pg";
 import { parsePost } from "./parser.mjs";
-import { launchOnOtc, otcWalletStatus } from "./otc-launch.mjs";
+import { launchOnOtc, otcWalletStatus, preflightOtcLaunch } from "./otc-launch.mjs";
 
 const { Pool } = pg;
 const PORT = Number(process.env.PORT || 8789);
@@ -18,6 +18,10 @@ const pool = new Pool({ connectionString: DATABASE_URL, ssl: DATABASE_URL.includ
 const pairs = JSON.parse(await readFile(new URL("../../data/pairs.json", import.meta.url), "utf8"));
 const byPair = new Map(pairs.flatMap((pair) => [[pair.symbol.toLowerCase(), pair], [pair.mint, pair]]));
 await pool.query(await readFile(new URL("../schema.sql", import.meta.url), "utf8"));
+let otcPreflight = { status: "pending", simulatedOnly: true };
+preflightOtcLaunch(pairs[0].mint)
+  .then((result) => { otcPreflight = { status: "ready", ...result }; })
+  .catch((error) => { otcPreflight = { status: "failed", ready: false, simulatedOnly: true, error: error.message }; });
 
 function json(res, status, body) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": PUBLIC_ORIGIN, "access-control-allow-headers": "authorization, content-type", "access-control-allow-methods": "GET,POST,OPTIONS", "cache-control": "no-store" });
@@ -81,7 +85,7 @@ const server=http.createServer(async(req,res)=>{
     const url=new URL(req.url,"http://local");
     if(req.method==="GET"&&url.pathname==="/health"){await pool.query("SELECT 1");return json(res,200,{ok:true,mode:MODE,pairs:pairs.length,wallet:await otcWalletStatus(),time:new Date().toISOString()});}
     if(req.method==="GET"&&url.pathname==="/v1/pairs") return json(res,200,{pairs});
-    if(req.method==="GET"&&url.pathname==="/v1/public/snapshot") { const [launches,events,hb]=await Promise.all([pool.query("SELECT * FROM launches ORDER BY created_at DESC LIMIT 50"),pool.query("SELECT id,message,status,created_at FROM activity ORDER BY created_at DESC LIMIT 100"),pool.query("SELECT * FROM listener_heartbeats ORDER BY last_seen_at DESC LIMIT 1")]); const last=hb.rows[0]; return json(res,200,{mode:MODE,listener:{ok:!!last&&Date.now()-new Date(last.last_seen_at).getTime()<90000,lastHeartbeat:last?.last_seen_at},backend:{ok:true},launches:launches.rows.map(launchShape),activity:events.rows.map(e=>({id:String(e.id),message:e.message,status:e.status,at:e.created_at}))}); }
+    if(req.method==="GET"&&url.pathname==="/v1/public/snapshot") { const [launches,events,hb,wallet]=await Promise.all([pool.query("SELECT * FROM launches ORDER BY created_at DESC LIMIT 50"),pool.query("SELECT id,message,status,created_at FROM activity ORDER BY created_at DESC LIMIT 100"),pool.query("SELECT * FROM listener_heartbeats ORDER BY last_seen_at DESC LIMIT 1"),otcWalletStatus()]); const last=hb.rows[0]; return json(res,200,{mode:MODE,listener:{ok:!!last&&Date.now()-new Date(last.last_seen_at).getTime()<90000,lastHeartbeat:last?.last_seen_at},backend:{ok:true},wallet,preflight:otcPreflight,launches:launches.rows.map(launchShape),activity:events.rows.map(e=>({id:String(e.id),message:e.message,status:e.status,at:e.created_at}))}); }
     if(!authorized(req)) return json(res,401,{error:"unauthorized"});
     if(req.method==="POST"&&url.pathname==="/v1/internal/ingest") return json(res,200,await ingest(await body(req)));
     if(req.method==="POST"&&url.pathname==="/v1/internal/heartbeat") { const p=await body(req); await pool.query("INSERT INTO listener_heartbeats (listener_id,agent_handle,version,last_seen_at,detail) VALUES ($1,$2,$3,now(),$4) ON CONFLICT (listener_id) DO UPDATE SET agent_handle=excluded.agent_handle,version=excluded.version,last_seen_at=now(),detail=excluded.detail",[String(p.listenerId||"mac-primary"),AGENT_HANDLE,String(p.version||"unknown"),p.detail||{}]); return json(res,200,{ok:true}); }
