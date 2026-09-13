@@ -60,6 +60,12 @@ for (const source of sources) {
       code: code.slice(Math.max(0, index - before), Math.min(code.length, index + after)),
     }];
   });
+  if (lower.includes("reward_wallet is not configured")) {
+    focused.push({ label: "constantsChunkHead", index: 0, code: code.slice(0, 16_000) });
+  }
+  if (lower.includes("metadatauri") && lower.includes("createfeesharingconfig")) {
+    focused.push({ label: "launcherChunkHead", index: 0, code: code.slice(0, 16_000) });
+  }
   if (snippets.length || focused.length) results.push({ source, bytes: code.length, focused, snippets });
 }
 
