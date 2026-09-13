@@ -8,15 +8,14 @@ const sources = [...html.matchAll(/<script[^>]+src=["']([^"']+)["']/g)]
   .map((match) => new URL(match[1], ORIGIN).href);
 
 const needles = [
-  "/api/",
-  "fetch(",
-  "launch",
-  "pump",
-  "meteora",
-  "transaction",
-  "creatorFee",
-  "feeRecipient",
-  "rewardMint",
+  "REWARD_WALLET",
+  "feeShareholders",
+  "PUMP_CREATOR_FEE_BPS",
+  "pointing its fees",
+  "/api/ipfs",
+  "/api/coins",
+  "createTx",
+  "pairMint",
   "quoteMint",
 ];
 
@@ -29,15 +28,14 @@ for (const source of sources) {
   const matches = needles.filter((needle) => lower.includes(needle.toLowerCase()));
   if (!matches.length) continue;
 
-  const endpoints = [...code.matchAll(/["'`](https?:\/\/[^"'`\\s]+|\/api\/[^"'`\\s]+)["'`]/g)]
-    .map((match) => match[1])
-    .filter((value, index, all) => all.indexOf(value) === index)
-    .slice(0, 50);
-  const snippets = matches.slice(0, 10).map((needle) => {
+  const snippets = matches.map((needle) => {
     const index = lower.indexOf(needle.toLowerCase());
-    return code.slice(Math.max(0, index - 500), Math.min(code.length, index + 1_500));
+    return {
+      needle,
+      code: code.slice(Math.max(0, index - 2_500), Math.min(code.length, index + 6_000)),
+    };
   });
-  results.push({ source, bytes: code.length, matches, endpoints, snippets });
+  results.push({ source, bytes: code.length, snippets });
 }
 
 console.log(JSON.stringify({ launcherUrl, scriptCount: sources.length, results }, null, 2));
