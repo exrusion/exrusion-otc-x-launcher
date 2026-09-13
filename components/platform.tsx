@@ -15,6 +15,8 @@ type Snapshot = {
   mode: "test" | "live";
   listener: { ok: boolean; lastHeartbeat?: string };
   backend: { ok: boolean };
+  wallet?: { ready: boolean; configured?: boolean; publicKey?: string; balanceLamports?: number; lookupTableReadable?: boolean; sdkMethodsReady?: boolean };
+  preflight?: { status: "pending" | "ready" | "failed"; ready?: boolean; simulatedOnly?: boolean };
   launches: Launch[];
   activity: { id: string; message: string; status: string; at: string }[];
 };
@@ -75,7 +77,7 @@ function Launches({ snapshot }: { snapshot: Snapshot }) {
     <section className="noise overflow-hidden rounded-[30px] bg-[#163f2a] p-6 text-white sm:p-10">
       <div className="grid gap-10 lg:grid-cols-[1.25fr_.75fr]">
         <div><span className="mb-5 inline-flex rounded-full bg-white/10 px-3 py-2 text-sm font-bold text-[#d7ff67]">Post on X. Launch on OTC.</span><h1 className="max-w-3xl text-4xl font-black leading-[1.02] tracking-[-.045em] sm:text-6xl">Tokens paired with stocks, pre-IPO assets, and crypto.</h1><p className="mt-5 max-w-2xl text-lg leading-8 text-white/68">Tag the agent with a name, ticker, image, and supported pair. The listener validates the post, launches through OTC, and replies with one verified link.</p></div>
-        <div className="rounded-[24px] border border-white/12 bg-white/7 p-5 backdrop-blur"><p className="text-xs font-bold uppercase tracking-[.16em] text-white/50">Live system</p><div className="mt-4 flex flex-wrap gap-2"><StatusPill ok={snapshot.listener.ok}>X listener</StatusPill><StatusPill ok={snapshot.backend.ok}>Backend</StatusPill></div><div className="mt-7 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-black/14 p-4"><b className="text-3xl">{pairs.length}</b><span className="mt-1 block text-sm text-white/55">supported pairs</span></div><div className="rounded-2xl bg-black/14 p-4"><b className="text-3xl">{snapshot.launches.length}</b><span className="mt-1 block text-sm text-white/55">launches tracked</span></div></div></div>
+        <div className="rounded-[24px] border border-white/12 bg-white/7 p-5 backdrop-blur"><p className="text-xs font-bold uppercase tracking-[.16em] text-white/50">Live system</p><div className="mt-4 flex flex-wrap gap-2"><StatusPill ok={snapshot.listener.ok}>X listener</StatusPill><StatusPill ok={snapshot.backend.ok}>Backend</StatusPill><StatusPill ok={Boolean(snapshot.wallet?.ready)}>Launch wallet</StatusPill><StatusPill ok={snapshot.preflight?.status === "ready"}>OTC preflight</StatusPill></div><div className="mt-7 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-black/14 p-4"><b className="text-3xl">{pairs.length}</b><span className="mt-1 block text-sm text-white/55">supported pairs</span></div><div className="rounded-2xl bg-black/14 p-4"><b className="text-3xl">{snapshot.launches.length}</b><span className="mt-1 block text-sm text-white/55">launches tracked</span></div></div></div>
       </div>
     </section>
     <div className="mt-10 flex items-end justify-between gap-4"><div><p className="text-sm font-black uppercase tracking-[.14em] text-[#6d766f]">Automatic feed</p><h2 className="mt-1 text-3xl font-black tracking-tight">Latest launches</h2></div><a href="/how-to-post" className="hidden rounded-xl bg-[#d7ff67] px-4 py-3 text-sm font-black text-[#163f2a] sm:block">Post format</a></div>
