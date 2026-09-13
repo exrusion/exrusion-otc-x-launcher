@@ -1,0 +1,14 @@
+node_modules/
+.next/
+dist/
+.sites-runtime/
+.wrangler/
+.env
+.env.*
+!.env.example
+runtime/*.json
+runtime/*.log
+runtime/*.pid
+chrome-profile/
+*.tgz
+*.tar.gz
