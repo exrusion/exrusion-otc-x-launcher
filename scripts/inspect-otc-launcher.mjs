@@ -45,7 +45,22 @@ for (const source of sources) {
       code: code.slice(Math.max(0, index - 4_000), Math.min(code.length, index + 10_000)),
     })),
   );
-  if (snippets.length) results.push({ source, bytes: code.length, snippets });
+  const focused = [
+    ["constantsModuleHead", "33840,e=>", 0, 12_000],
+    ["launcherModuleHead", "58798,e=>", 0, 8_000],
+    ["pumpSdkAlias", "lF=", 2_000, 3_000],
+    ["sharingConfigPda", "function l9", 2_000, 4_000],
+    ["sharingAtaPda", "function lX", 2_000, 4_000],
+    ["creatorVaultPda", "function rw", 2_000, 4_000],
+  ].flatMap(([label, target, before, after]) => {
+    const index = code.indexOf(target);
+    return index === -1 ? [] : [{
+      label,
+      index,
+      code: code.slice(Math.max(0, index - before), Math.min(code.length, index + after)),
+    }];
+  });
+  if (snippets.length || focused.length) results.push({ source, bytes: code.length, focused, snippets });
 }
 
 console.log(JSON.stringify({ launcherUrl, scriptCount: sources.length, results }, null, 2));
