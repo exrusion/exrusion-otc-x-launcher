@@ -49,7 +49,11 @@ function configuredLookupTable() {
   return value ? new PublicKey(value) : null;
 }
 
+let walletStatusCache = null;
+let walletStatusCachedAt = 0;
+
 export async function otcWalletStatus() {
+  if (walletStatusCache && Date.now() - walletStatusCachedAt < 60_000) return walletStatusCache;
   try {
     const signer = signerFromEnvironment();
     const rpc = connection();
@@ -58,18 +62,78 @@ export async function otcWalletStatus() {
       rpc.getBalance(signer.publicKey, "confirmed"),
       lookupTable ? rpc.getAddressLookupTable(lookupTable) : Promise.resolve({ value: null }),
     ]);
-    return {
+    walletStatusCache = {
       configured: true,
       publicKey: signer.publicKey.toBase58(),
       balanceLamports: balance,
       rpcReachable: true,
       lookupTableConfigured: Boolean(lookupTable),
       lookupTableReadable: Boolean(table.value),
+      sdkMethodsReady: ["createV2Instruction", "createFeeSharingConfig", "updateFeeSharesV2"]
+        .every((method) => typeof PUMP_SDK[method] === "function"),
       ready: balance > 0 && Boolean(table.value),
     };
   } catch (error) {
-    return { configured: false, ready: false, error: error.message };
+    walletStatusCache = { configured: false, ready: false, error: error.message };
   }
+  walletStatusCachedAt = Date.now();
+  return walletStatusCache;
+}
+
+export async function preflightOtcLaunch(pairMintValue) {
+  const signer = signerFromEnvironment();
+  const rpc = connection();
+  const lookupTableAddress = configuredLookupTable();
+  if (!lookupTableAddress) throw new Error("OTC_LAUNCH_LOOKUP_TABLE is missing.");
+  const pairMint = new PublicKey(pairMintValue);
+  const [pairAccount, lookup, global, blockhashState] = await Promise.all([
+    rpc.getAccountInfo(pairMint, "confirmed"),
+    rpc.getAddressLookupTable(lookupTableAddress),
+    new OnlinePumpSdk(rpc).fetchGlobal(),
+    rpc.getLatestBlockhash("confirmed"),
+  ]);
+  if (!pairAccount) throw new Error("The preflight pair mint is not readable on chain.");
+  const quoteTokenProgram = pairAccount.owner;
+  if (!quoteTokenProgram.equals(TOKEN_PROGRAM_ID) && !quoteTokenProgram.equals(TOKEN_2022_PROGRAM_ID)) {
+    throw new Error("The preflight pair is not owned by a supported token program.");
+  }
+  if (!lookup.value) throw new Error("OTC's launch lookup table is not readable on chain.");
+  const mintSigner = Keypair.generate();
+  const createIx = await PUMP_SDK.createV2Instruction({
+    global,
+    mint: mintSigner.publicKey,
+    name: "OTC Launcher Preflight",
+    symbol: "OTCTEST",
+    uri: `${OTC_ORIGIN}/docs`,
+    creator: signer.publicKey,
+    user: signer.publicKey,
+    mayhemMode: false,
+    quoteMint: pairMint,
+    quoteTokenProgram,
+    creatorFeeBps: new BN(100),
+  });
+  const tx = new VersionedTransaction(
+    new TransactionMessage({
+      payerKey: signer.publicKey,
+      recentBlockhash: blockhashState.blockhash,
+      instructions: [
+        ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+        ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 200_000 }),
+        createIx,
+      ],
+    }).compileToV0Message([lookup.value]),
+  );
+  tx.sign([signer, mintSigner]);
+  const simulation = await rpc.simulateTransaction(tx, { commitment: "confirmed", sigVerify: true });
+  if (simulation.value.err) {
+    throw new Error(`OTC preflight simulation failed: ${JSON.stringify(simulation.value.err)}`);
+  }
+  return {
+    ready: true,
+    pairMint: pairMint.toBase58(),
+    unitsConsumed: simulation.value.unitsConsumed ?? null,
+    simulatedOnly: true,
+  };
 }
 
 async function uploadMetadata(row, mint) {
