@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import pg from "pg";
 import { parsePost } from "./parser.mjs";
+import { launchOnOtc, otcWalletStatus } from "./otc-launch.mjs";
 
 const { Pool } = pg;
 const PORT = Number(process.env.PORT || 8789);
@@ -58,10 +59,7 @@ async function executeLaunch(row) {
     const digest = createHash("sha256").update(`${row.source_post_id}:${row.pair_mint}`).digest("hex").slice(0,40);
     return { contractAddress:`test_${digest}`, liveUrl:`https://otcdesks.cash/launcher?simulation=${row.source_post_id}` };
   }
-  if (!process.env.OTC_LAUNCH_ENDPOINT || !process.env.OTC_LAUNCH_TOKEN) throw new Error("Official OTC launch integration is not configured.");
-  const response = await fetch(process.env.OTC_LAUNCH_ENDPOINT,{method:"POST",headers:{"content-type":"application/json","authorization":`Bearer ${process.env.OTC_LAUNCH_TOKEN}`},body:JSON.stringify({name:row.name,ticker:row.ticker,imageUrl:row.image_url,pairMint:row.pair_mint,sourceUrl:row.source_url,creatorHandle:row.creator_handle})});
-  if(!response.ok) throw new Error(`OTC launcher returned ${response.status}`); const result=await response.json();
-  if(!result.contractAddress || !result.liveUrl) throw new Error("OTC launcher returned an incomplete result."); return result;
+  return launchOnOtc(row);
 }
 
 let processing=false;
@@ -81,7 +79,7 @@ const server=http.createServer(async(req,res)=>{
   try {
     if(req.method==="OPTIONS") return json(res,204,{});
     const url=new URL(req.url,"http://local");
-    if(req.method==="GET"&&url.pathname==="/health"){await pool.query("SELECT 1");return json(res,200,{ok:true,mode:MODE,pairs:pairs.length,time:new Date().toISOString()});}
+    if(req.method==="GET"&&url.pathname==="/health"){await pool.query("SELECT 1");return json(res,200,{ok:true,mode:MODE,pairs:pairs.length,wallet:await otcWalletStatus(),time:new Date().toISOString()});}
     if(req.method==="GET"&&url.pathname==="/v1/pairs") return json(res,200,{pairs});
     if(req.method==="GET"&&url.pathname==="/v1/public/snapshot") { const [launches,events,hb]=await Promise.all([pool.query("SELECT * FROM launches ORDER BY created_at DESC LIMIT 50"),pool.query("SELECT id,message,status,created_at FROM activity ORDER BY created_at DESC LIMIT 100"),pool.query("SELECT * FROM listener_heartbeats ORDER BY last_seen_at DESC LIMIT 1")]); const last=hb.rows[0]; return json(res,200,{mode:MODE,listener:{ok:!!last&&Date.now()-new Date(last.last_seen_at).getTime()<90000,lastHeartbeat:last?.last_seen_at},backend:{ok:true},launches:launches.rows.map(launchShape),activity:events.rows.map(e=>({id:String(e.id),message:e.message,status:e.status,at:e.created_at}))}); }
     if(!authorized(req)) return json(res,401,{error:"unauthorized"});
