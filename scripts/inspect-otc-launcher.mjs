@@ -62,6 +62,13 @@ for (const source of sources) {
   });
   if (lower.includes("reward_wallet is not configured")) {
     focused.push({ label: "constantsChunkHead", index: 0, code: code.slice(0, 16_000) });
+    const addressContexts = [...code.matchAll(/["']([1-9A-HJ-NP-Za-km-z]{32,44})["']/g)]
+      .map((match) => ({
+        address: match[1],
+        index: match.index,
+        context: code.slice(Math.max(0, match.index - 100), Math.min(code.length, match.index + 150)),
+      }));
+    focused.push({ label: "constantsAddressContexts", index: 0, code: JSON.stringify(addressContexts) });
   }
   if (lower.includes("metadatauri") && lower.includes("createfeesharingconfig")) {
     focused.push({ label: "launcherChunkHead", index: 0, code: code.slice(0, 16_000) });
